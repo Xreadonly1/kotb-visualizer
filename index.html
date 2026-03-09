@@ -138,6 +138,9 @@
   .delta-better { color: #27ae60; font-weight: 700; }
   .delta-worse  { color: #c0392b; font-weight: 700; }
   .delta-none   { color: #bbb; }
+  /* ── YoY two-rider comparison ── */
+  .yoy-r2 { color: #2c7be5; }
+  .yoy-cell-line { display: block; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -166,8 +169,12 @@
     <select id="sel-track"><option value="">— select track —</option></select>
   </div>
   <div class="ctrl-group" id="grp-rider" style="display:none">
-    <label>Rider</label>
+    <label>Rider 1</label>
     <select id="sel-rider"><option value="">— select rider —</option></select>
+  </div>
+  <div class="ctrl-group" id="grp-rider-2" style="display:none">
+    <label>Rider 2</label>
+    <select id="sel-rider-2"><option value="">— compare with... —</option></select>
   </div>
 </div>
 
@@ -406,6 +413,7 @@ document.querySelectorAll('.tab').forEach(t => {
     grpSession.style.display = (activeTab === 'weekend' || activeTab === 'points' || isYoY) ? 'none' : '';
     grpTrack.style.display   = isYoY ? '' : 'none';
     grpRider.style.display   = isYoY ? '' : 'none';
+    document.getElementById('grp-rider-2').style.display = isYoY ? '' : 'none';
     renderActive();
   });
 });
@@ -681,7 +689,7 @@ function renderPointsChart() {
   }
 
   const data = POINTS[year];
-  if (!data || !data.event_codes.length) {
+  if (!data || !data.race_labels.length) {
     Plotly.purge(el);
     el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888">No race data available for ' + year + '.</div>';
     return;
@@ -703,11 +711,11 @@ function renderPointsChart() {
     const yVals = isPos ? rd.champ_pos : rd.cumulative;
     const textVals = isPos
       ? rd.champ_pos.map((p, j) => 'P' + p + ' (' + rd.cumulative[j] + ' pts)')
-      : rd.cumulative.map((c, j) => c + ' pts (event: +' + rd.event_points[j] + ')');
+      : rd.cumulative.map((c, j) => c + ' pts (race: +' + rd.race_pts[j] + ')');
 
     return {
       name: '#' + rd.number + ' ' + name,
-      x: data.event_labels,
+      x: data.race_labels,
       y: yVals,
       mode: 'lines+markers',
       marker: { size: 10, symbol: st.symbol, color: st.color },
@@ -728,7 +736,7 @@ function renderPointsChart() {
       title: 'Round',
       type: 'category',
       categoryorder: 'array',
-      categoryarray: data.event_labels,
+      categoryarray: data.race_labels,
       tickangle: -30,
     },
     yaxis: isPos ? {
@@ -764,10 +772,11 @@ function renderPointsChart() {
 }
 
 // ── Year-over-Year Tab ────────────────────────────────────────────────────────
-const selTrack = document.getElementById('sel-track');
-const selRider = document.getElementById('sel-rider');
+const selTrack  = document.getElementById('sel-track');
+const selRider  = document.getElementById('sel-rider');
+const selRider2 = document.getElementById('sel-rider-2');
 
-const YOY_SESSION_ORDER = {'P1':1,'P2':2,'P3':3,'Q1':4,'Q2':5,'WU':6,'R1':7,'R2':8};
+const YOY_SESSION_ORDER = {'P1':1,'P2':2,'P3':3,'Q1':4,'Q2':5,'R1':6,'WU':7,'R2':8};
 const YOY_SESSION_LABELS = {
   'P1':'Practice 1','P2':'Practice 2','P3':'Practice 3',
   'Q1':'Qualifying 1','Q2':'Qualifying 2',
@@ -815,12 +824,25 @@ function populateYoYRiders() {
     o.value = name; o.textContent = '#' + num + ' ' + name;
     selRider.appendChild(o);
   });
+
+  // Also populate Rider 2 dropdown, preserving existing selection if still valid
+  const prevR2 = selRider2.value;
+  selRider2.innerHTML = '<option value="">— compare with... —</option>';
+  sorted.forEach(([name, num]) => {
+    const o = document.createElement('option');
+    o.value = name; o.textContent = '#' + num + ' ' + name;
+    selRider2.appendChild(o);
+  });
+  if (prevR2 && [...selRider2.options].some(o => o.value === prevR2)) {
+    selRider2.value = prevR2;
+  }
 }
 
 function renderYoYTable() {
   const el        = document.getElementById('tab-yoy');
   const trackName = selTrack.value;
   const rider     = selRider.value;
+  const rider2    = selRider2.value || null;
 
   if (!trackName || !rider) {
     el.innerHTML = '<div class="no-data">Select a track and rider above to view year-over-year comparison.</div>';
@@ -855,21 +877,46 @@ function renderYoYTable() {
     yearCounts[ev.year] > 1 ? String(ev.year) + ' Rd' + ev.round_number : String(ev.year)
   );
 
-  // Per-entry session data (index-based, so duplicate years stay separate)
-  const entryData = entries.map(ev => {
-    const sessMap = {};
-    const rd = ev.riders[rider];
-    if (rd) {
-      ev.sessions.forEach((sess, i) => {
-        sessMap[sess] = { time: rd.times[i], time_str: rd.time_strs[i] };
-      });
+  // Build per-entry session map for a given rider name
+  function buildEntryData(rName) {
+    return entries.map(ev => {
+      const sessMap = {};
+      const rd = ev.riders[rName];
+      if (rd) {
+        ev.sessions.forEach((sess, i) => {
+          sessMap[sess] = { time: rd.times[i], time_str: rd.time_strs[i] };
+        });
+      }
+      return sessMap;
+    });
+  }
+
+  const entryData  = buildEntryData(rider);
+  const entryData2 = rider2 ? buildEntryData(rider2) : null;
+
+  // Helper: returns { d, p } html spans for a year-to-year delta
+  function deltaSpan(tCur, tNext, extraCls) {
+    if (tCur !== null && tNext !== null) {
+      const dv   = tNext - tCur;
+      const pv   = (dv / tCur) * 100;
+      const cls  = dv < 0 ? 'delta-better' : 'delta-worse';
+      const sign = dv >= 0 ? '+' : '';
+      return {
+        d: '<span class="yoy-cell-line ' + cls + extraCls + '">' + sign + dv.toFixed(3) + ' s</span>',
+        p: '<span class="yoy-cell-line ' + cls + extraCls + '">' + sign + pv.toFixed(2) + '%</span>',
+      };
     }
-    return sessMap;
-  });
+    return {
+      d: '<span class="yoy-cell-line delta-none' + extraCls + '">&mdash;</span>',
+      p: '<span class="yoy-cell-line delta-none' + extraCls + '">&mdash;</span>',
+    };
+  }
 
   // ── Build HTML ──
   let html = '<div class="yoy-wrap">';
-  html += '<div class="yoy-header">' + trackName + ' &mdash; ' + rider + '</div>';
+  html += '<div class="yoy-header">' + trackName + ' &mdash; ' + rider;
+  if (rider2) html += ' <span style="color:#2c7be5"> vs ' + rider2 + '</span>';
+  html += '</div>';
   html += '<table class="yoy-table"><thead>';
 
   // Header row 1: Session | Col0 | →Col1 (colspan=2) | Col1 | ...
@@ -898,25 +945,48 @@ function renderYoYTable() {
     html += '<td>' + sessLabel + '</td>';
 
     for (let i = 0; i < N; i++) {
-      const d = entryData[i][sess];
-      const timeStr = d && d.time !== null ? (d.time_str || fmtSec(d.time)) : null;
-      html += '<td class="time-val">' + (timeStr || '&mdash;') + '</td>';
+      const d1 = entryData[i][sess];
+      const t1 = d1 && d1.time !== null ? (d1.time_str || fmtSec(d1.time)) : null;
 
+      // ── Time cell ──
+      if (!rider2) {
+        html += '<td class="time-val">' + (t1 || '&mdash;') + '</td>';
+      } else {
+        const d2 = entryData2[i][sess];
+        const t2 = d2 && d2.time !== null ? (d2.time_str || fmtSec(d2.time)) : null;
+        html += '<td class="time-val">' +
+          '<span class="yoy-cell-line">'          + (t1 || '&mdash;') + '</span>' +
+          '<span class="yoy-cell-line yoy-r2">' + (t2 || '&mdash;') + '</span>' +
+          '</td>';
+      }
+
+      // ── Delta cells (year-to-year) ──
       if (i < N - 1) {
-        const dNext = entryData[i + 1][sess];
-        const tCur  = d     && d.time     !== null ? d.time     : null;
-        const tNext = dNext && dNext.time !== null ? dNext.time : null;
+        const dNext1 = entryData[i + 1][sess];
+        const tCur1  = d1    && d1.time    !== null ? d1.time    : null;
+        const tNext1 = dNext1 && dNext1.time !== null ? dNext1.time : null;
 
-        if (tCur !== null && tNext !== null) {
-          const delta = tNext - tCur;
-          const pct   = (delta / tCur) * 100;
-          const cls   = delta < 0 ? 'delta-better' : 'delta-worse';
-          const sign  = delta >= 0 ? '+' : '';
-          html += '<td class="delta-val ' + cls + '">' + sign + delta.toFixed(3) + ' s</td>';
-          html += '<td class="delta-pct ' + cls + '">' + sign + pct.toFixed(2) + '%</td>';
+        if (!rider2) {
+          if (tCur1 !== null && tNext1 !== null) {
+            const delta = tNext1 - tCur1;
+            const pct   = (delta / tCur1) * 100;
+            const cls   = delta < 0 ? 'delta-better' : 'delta-worse';
+            const sign  = delta >= 0 ? '+' : '';
+            html += '<td class="delta-val ' + cls + '">' + sign + delta.toFixed(3) + ' s</td>';
+            html += '<td class="delta-pct ' + cls + '">' + sign + pct.toFixed(2) + '%</td>';
+          } else {
+            html += '<td class="delta-val delta-none">&mdash;</td>';
+            html += '<td class="delta-pct delta-none">&mdash;</td>';
+          }
         } else {
-          html += '<td class="delta-val delta-none">&mdash;</td>';
-          html += '<td class="delta-pct delta-none">&mdash;</td>';
+          const d2i  = entryData2[i][sess];
+          const dN2  = entryData2[i + 1][sess];
+          const tC2  = d2i && d2i.time !== null ? d2i.time : null;
+          const tN2  = dN2 && dN2.time !== null ? dN2.time : null;
+          const s1   = deltaSpan(tCur1, tNext1, '');
+          const s2   = deltaSpan(tC2,   tN2,    ' yoy-r2');
+          html += '<td class="delta-val">'  + s1.d + s2.d + '</td>';
+          html += '<td class="delta-pct">'  + s1.p + s2.p + '</td>';
         }
       }
     }
@@ -931,7 +1001,8 @@ selTrack.addEventListener('change', function() {
   populateYoYRiders();
   renderYoYTable();
 });
-selRider.addEventListener('change', renderYoYTable);
+selRider.addEventListener('change',  renderYoYTable);
+selRider2.addEventListener('change', renderYoYTable);
 
 // ── DB summary ────────────────────────────────────────────────────────────────
 const nYears    = new Set(SESSIONS.map(s => s.year)).size;
