@@ -3,9 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Adam's King of The Baggers Visualizer</title>
 <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
-<script src="motodata.js"></script>
+<script>document.write('<script src="motodata.js?v=' + Date.now() + '"><\/script>');</script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -376,14 +379,24 @@ function populateSessions() {
   const year  = +selYear.value || null;
   const event = selEvent.value || null;
   selSession.innerHTML = '<option value="">— pick session —</option>';
-  SESSIONS.filter(s => (!year || s.year === year) && (!event || s.event_code === event))
-    .forEach(s => {
-      const o = document.createElement('option');
-      o.value = s.id;
-      o.textContent = s.year + ' Rd' + s.round_number + ' ' + s.event_code +
-                      ' — ' + s.session_code + ' (' + s.session_type + ')';
-      selSession.appendChild(o);
-    });
+  const filtered = SESSIONS.filter(s => (!year || s.year === year) && (!event || s.event_code === event));
+  const q1 = filtered.find(s => s.session_code === 'Q1');
+  const q2 = filtered.find(s => s.session_code === 'Q2');
+  filtered.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = s.year + ' Rd' + s.round_number + ' ' + s.event_code +
+                    ' — ' + s.session_code + ' (' + s.session_type + ')';
+    selSession.appendChild(o);
+    // Inject virtual Combined Qualifying option immediately after Q2
+    if (s.session_code === 'Q2' && q1 && q2) {
+      const ov = document.createElement('option');
+      ov.value = 'CQ:' + q1.id + ':' + q2.id;
+      ov.textContent = s.year + ' Rd' + s.round_number + ' ' + s.event_code +
+                       ' — Combined Qualifying';
+      selSession.appendChild(ov);
+    }
+  });
   renderActive();
 }
 
@@ -428,6 +441,14 @@ function renderActive() {
 
 // ── Session info helper ───────────────────────────────────────────────────────
 function sessionInfo(sid) {
+  if (typeof sid === 'string' && sid.startsWith('CQ:')) {
+    const q1id = +sid.split(':')[1];
+    const s = SESSIONS.find(x => x.id === q1id);
+    if (!s) return '';
+    return '<div class="session-info"><strong>' + s.year + ' Round ' + s.round_number +
+           '</strong> &nbsp;·&nbsp; ' + s.event_name +
+           ' &nbsp;·&nbsp; <strong>Combined Qualifying</strong> (best of Q1 + Q2)</div>';
+  }
   const s = SESSIONS.find(x => x.id === sid);
   if (!s) return '';
   return '<div class="session-info"><strong>' + s.year + ' Round ' + s.round_number +
@@ -437,9 +458,11 @@ function sessionInfo(sid) {
 
 // ── Results tab ───────────────────────────────────────────────────────────────
 function renderResults() {
-  const el  = document.getElementById('tab-results');
-  const sid = +selSession.value;
-  if (!sid) { el.innerHTML = '<div class="no-data">Select a session above to view results.</div>'; return; }
+  const el     = document.getElementById('tab-results');
+  const sidVal = selSession.value;
+  if (!sidVal) { el.innerHTML = '<div class="no-data">Select a session above to view results.</div>'; return; }
+  if (sidVal.startsWith('CQ:')) { renderCombinedQualifying(el, sidVal); return; }
+  const sid = +sidVal;
 
   const rows = RESULTS[sid] || [];
   if (!rows.length) { el.innerHTML = sessionInfo(sid) + '<div class="no-data">No results data for this session.</div>'; return; }
@@ -502,9 +525,11 @@ function renderResults() {
 
 // ── Laps tab ──────────────────────────────────────────────────────────────────
 function renderLaps() {
-  const el  = document.getElementById('tab-laps');
-  const sid = +selSession.value;
-  if (!sid) { el.innerHTML = '<div class="no-data">Select a session above to view laps.</div>'; return; }
+  const el     = document.getElementById('tab-laps');
+  const sidVal = selSession.value;
+  if (!sidVal) { el.innerHTML = '<div class="no-data">Select a session above to view laps.</div>'; return; }
+  if (sidVal.startsWith('CQ:')) { renderCombinedQualifyingLaps(el, sidVal); return; }
+  const sid = +sidVal;
 
   const sessionLaps = LAPS[sid] || {};
   const riders = Object.keys(sessionLaps).sort();
@@ -567,6 +592,184 @@ function renderLaps() {
 
 function toggleRider(header) {
   header.nextElementSibling.classList.toggle('open');
+}
+
+// ── Combined Qualifying — Results renderer ────────────────────────────────────
+function renderCombinedQualifying(el, sidVal) {
+  const parts = sidVal.split(':');
+  const q1id  = +parts[1];
+  const q2id  = +parts[2];
+  const q1rows = RESULTS[q1id] || [];
+  const q2rows = RESULTS[q2id] || [];
+
+  if (!q1rows.length && !q2rows.length) {
+    el.innerHTML = sessionInfo(sidVal) + '<div class="no-data">No qualifying data found.</div>';
+    return;
+  }
+
+  const allRiders = {};
+  function mergeRow(r, sessCode) {
+    if (!allRiders[r.name]) {
+      allRiders[r.name] = { number: r.number, name: r.name, make: r.make,
+        best_secs: null, best_lap: null, from_sess: null,
+        s1: null, s2: null, s3: null, s4: null, speed: null };
+    }
+    const rd = allRiders[r.name];
+    if (r.best_secs !== null && (rd.best_secs === null || r.best_secs < rd.best_secs)) {
+      rd.best_secs = r.best_secs;
+      rd.best_lap  = r.best_lap;
+      rd.from_sess = sessCode;
+    }
+    // Best sector times across both sessions
+    if (r.s1    !== null && (rd.s1    === null || r.s1    < rd.s1))    rd.s1    = r.s1;
+    if (r.s2    !== null && (rd.s2    === null || r.s2    < rd.s2))    rd.s2    = r.s2;
+    if (r.s3    !== null && (rd.s3    === null || r.s3    < rd.s3))    rd.s3    = r.s3;
+    if (r.s4    !== null && (rd.s4    === null || r.s4    < rd.s4))    rd.s4    = r.s4;
+    if (r.speed !== null && (rd.speed === null || r.speed > rd.speed)) rd.speed = r.speed;
+  }
+  q1rows.forEach(r => mergeRow(r, 'Q1'));
+  q2rows.forEach(r => mergeRow(r, 'Q2'));
+
+  const sorted = Object.values(allRiders).sort((a, b) => {
+    if (a.best_secs === null && b.best_secs === null) return 0;
+    if (a.best_secs === null) return 1;
+    if (b.best_secs === null) return -1;
+    return a.best_secs - b.best_secs;
+  });
+  sorted.forEach((r, i) => { r.pos = i + 1; });
+  const leaderSecs = sorted.length && sorted[0].best_secs !== null ? sorted[0].best_secs : null;
+  sorted.forEach(r => {
+    r.gap = (r.best_secs !== null && leaderSecs !== null && r.pos > 1) ? r.best_secs - leaderSecs : null;
+  });
+
+  const hasS1  = sorted.some(r => r.s1    !== null);
+  const hasS2  = sorted.some(r => r.s2    !== null);
+  const hasS3  = sorted.some(r => r.s3    !== null);
+  const hasS4  = sorted.some(r => r.s4    !== null);
+  const hasSpd = sorted.some(r => r.speed !== null);
+  const fastS1 = hasS1 ? Math.min(...sorted.filter(r => r.s1 !== null).map(r => r.s1)) : null;
+  const fastS2 = hasS2 ? Math.min(...sorted.filter(r => r.s2 !== null).map(r => r.s2)) : null;
+  const fastS3 = hasS3 ? Math.min(...sorted.filter(r => r.s3 !== null).map(r => r.s3)) : null;
+  const fastS4 = hasS4 ? Math.min(...sorted.filter(r => r.s4 !== null).map(r => r.s4)) : null;
+
+  let html = sessionInfo(sidVal) + '<div class="results-wrap"><table><thead><tr>';
+  html += '<th>Pos</th><th>#</th><th>Rider</th><th>Make</th><th>Sess</th>';
+  html += '<th class="num">Best Lap</th><th class="num">Gap</th>';
+  if (hasS1) html += '<th class="num sector">S1</th>';
+  if (hasS2) html += '<th class="num sector">S2</th>';
+  if (hasS3) html += '<th class="num sector">S3</th>';
+  if (hasS4) html += '<th class="num sector">S4</th>';
+  if (hasSpd) html += '<th class="num">MPH</th>';
+  html += '</tr></thead><tbody>';
+
+  function sCell(val, fastest) {
+    if (val === null) return '<td class="num sector">—</td>';
+    const isFastest = fastest !== null && Math.abs(val - fastest) < 0.0001;
+    return '<td class="num sector" style="' + (isFastest ? 'font-weight:700;color:#27ae60' : '') + '">' + val.toFixed(3) + '</td>';
+  }
+
+  sorted.forEach(r => {
+    html += '<tr class="' + (r.pos === 1 ? 'fastest' : '') + '">';
+    html += '<td class="pos">' + r.pos + '</td>';
+    html += '<td><strong>' + r.number + '</strong></td>';
+    html += '<td>' + r.name + '</td>';
+    html += '<td><span class="' + makeClass(r.make) + '">' + (r.make || '') + '</span></td>';
+    html += '<td style="font-size:11px;color:#888;font-weight:600">' + (r.from_sess || '—') + '</td>';
+    html += '<td class="num best-lap">' + (r.best_lap || '—') + '</td>';
+    html += '<td class="num gap-val">' + (r.gap !== null ? '+' + r.gap.toFixed(3) : '—') + '</td>';
+    if (hasS1) html += sCell(r.s1, fastS1);
+    if (hasS2) html += sCell(r.s2, fastS2);
+    if (hasS3) html += sCell(r.s3, fastS3);
+    if (hasS4) html += sCell(r.s4, fastS4);
+    if (hasSpd) html += '<td class="num">' + (r.speed ? r.speed.toFixed(1) : '—') + '</td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+// ── Combined Qualifying — Laps renderer ───────────────────────────────────────
+function renderCombinedQualifyingLaps(el, sidVal) {
+  const parts  = sidVal.split(':');
+  const q1id   = +parts[1];
+  const q2id   = +parts[2];
+  const q1laps = LAPS[q1id] || {};
+  const q2laps = LAPS[q2id] || {};
+
+  const allNames = [...new Set([...Object.keys(q1laps), ...Object.keys(q2laps)])];
+  if (!allNames.length) {
+    el.innerHTML = sessionInfo(sidVal) + '<div class="no-data">No lap data for this session.</div>';
+    return;
+  }
+
+  // Find each rider's single fastest non-pit lap from either Q1 or Q2
+  const riderBest = {};
+  allNames.forEach(name => {
+    let bestSecs = null, bestLap = null, fromSess = null;
+    function check(sessLaps, sessLabel) {
+      (sessLaps[name] || []).forEach(l => {
+        if (!l.pit && l.secs !== null && (bestSecs === null || l.secs < bestSecs)) {
+          bestSecs = l.secs; bestLap = l; fromSess = sessLabel;
+        }
+      });
+    }
+    check(q1laps, 'Q1');
+    check(q2laps, 'Q2');
+    if (bestLap) riderBest[name] = { lap: bestLap, secs: bestSecs, from: fromSess };
+  });
+
+  // Sort riders fastest → slowest
+  const sortedRiders = Object.keys(riderBest).sort((a, b) => riderBest[a].secs - riderBest[b].secs);
+
+  const bestLaps = sortedRiders.map(n => riderBest[n].lap);
+  const hasS1  = bestLaps.some(l => l.s1    !== null);
+  const hasS2  = bestLaps.some(l => l.s2    !== null);
+  const hasS3  = bestLaps.some(l => l.s3    !== null);
+  const hasTod = bestLaps.some(l => l.tod   !== null);
+  const hasSpd = bestLaps.some(l => l.speed !== null);
+
+  // Build a combined results lookup for rider numbers
+  const combinedResults = {};
+  [...(RESULTS[q1id] || []), ...(RESULTS[q2id] || [])].forEach(r => {
+    if (!combinedResults[r.name]) combinedResults[r.name] = r;
+  });
+
+  let html = sessionInfo(sidVal);
+
+  sortedRiders.forEach((name, idx) => {
+    const { lap, secs, from } = riderBest[name];
+    const resultRow = combinedResults[name];
+    const numStr = resultRow ? '#' + resultRow.number + ' ' : '';
+
+    html += '<div class="rider-block">' +
+            '<div class="rider-header" onclick="toggleRider(this)">' +
+            '<span>P' + (idx + 1) + ' — ' + numStr + name + '</span>' +
+            '<span class="meta">Best lap from ' + from + ': ' + fmtSec(secs) + ' &nbsp;·&nbsp; click to expand ▾</span>' +
+            '</div><div class="rider-body"><table><thead><tr>' +
+            '<th class="num">Lap</th><th class="num">Time</th><th>From</th>';
+    if (hasS1) html += '<th class="num sector">S1</th>';
+    if (hasS2) html += '<th class="num sector">S2</th>';
+    if (hasS3) html += '<th class="num sector">S3</th>';
+    if (hasTod) html += '<th>Time of Day</th>';
+    if (hasSpd) html += '<th class="num">MPH</th>';
+    html += '</tr></thead><tbody>';
+
+    html += '<tr class="best-lap-row">';
+    html += '<td class="num">' + lap.lap + '</td>';
+    html += '<td class="num">' + (lap.time || '—') + '</td>';
+    html += '<td style="font-size:11px;font-weight:600">' + from + '</td>';
+    if (hasS1) html += '<td class="num sector">' + (lap.s1 !== null ? lap.s1.toFixed(3) : '—') + '</td>';
+    if (hasS2) html += '<td class="num sector">' + (lap.s2 !== null ? lap.s2.toFixed(3) : '—') + '</td>';
+    if (hasS3) html += '<td class="num sector">' + (lap.s3 !== null ? lap.s3.toFixed(3) : '—') + '</td>';
+    if (hasTod) html += '<td>' + (lap.tod || '') + '</td>';
+    if (hasSpd) html += '<td class="num">' + (lap.speed ? lap.speed.toFixed(1) : '—') + '</td>';
+    html += '</tr>';
+
+    html += '</tbody></table></div></div>';
+  });
+
+  el.innerHTML = html;
 }
 
 // ── Weekend Progression Chart ─────────────────────────────────────────────────
