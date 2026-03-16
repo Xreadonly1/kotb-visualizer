@@ -430,18 +430,29 @@ function populateSessions() {
   const event = selEvent.value || null;
   selSession.innerHTML = '<option value="">— pick session —</option>';
   const filtered = SESSIONS.filter(s => s.class_code === selectedClass && (!year || s.year === year) && (!event || s.event_code === event));
-  const q1 = filtered.find(s => s.session_code === 'Q1');
-  const q2 = filtered.find(s => s.session_code === 'Q2');
+
+  // KTB: Q1 + Q2.  SSP: Q1A + Q1B + Q2A + Q2B (some may be absent).
+  const q1  = filtered.find(s => s.session_code === 'Q1');
+  const q2  = filtered.find(s => s.session_code === 'Q2');
+  const q1a = filtered.find(s => s.session_code === 'Q1A');
+  const q1b = filtered.find(s => s.session_code === 'Q1B');
+  const q2a = filtered.find(s => s.session_code === 'Q2A');
+  const q2b = filtered.find(s => s.session_code === 'Q2B');
+  const sspQuals  = [q1a, q1b, q2a, q2b].filter(Boolean);
+  const cqSessions = sspQuals.length ? sspQuals : (q1 && q2 ? [q1, q2] : []);
+  const cqValue    = cqSessions.length ? 'CQ:' + cqSessions.map(s => s.id).join(':') : null;
+  const injectAfter = cqSessions.length ? cqSessions[cqSessions.length - 1] : null;
+
   filtered.forEach(s => {
     const o = document.createElement('option');
     o.value = s.id;
     o.textContent = s.year + ' Rd' + s.round_number + ' ' + s.event_code +
                     ' — ' + s.session_code + ' (' + s.session_type + ')';
     selSession.appendChild(o);
-    // Inject virtual Combined Qualifying option immediately after Q2
-    if (s.session_code === 'Q2' && q1 && q2) {
+    // Inject virtual Combined Qualifying option after the last qualifying session
+    if (cqValue && injectAfter && s.id === injectAfter.id) {
       const ov = document.createElement('option');
-      ov.value = 'CQ:' + q1.id + ':' + q2.id;
+      ov.value = cqValue;
       ov.textContent = s.year + ' Rd' + s.round_number + ' ' + s.event_code +
                        ' — Combined Qualifying';
       selSession.appendChild(ov);
@@ -492,12 +503,14 @@ function renderActive() {
 // ── Session info helper ───────────────────────────────────────────────────────
 function sessionInfo(sid) {
   if (typeof sid === 'string' && sid.startsWith('CQ:')) {
-    const q1id = +sid.split(':')[1];
-    const s = SESSIONS.find(x => x.id === q1id);
+    const firstId = +sid.split(':')[1];
+    const s = SESSIONS.find(x => x.id === firstId);
     if (!s) return '';
+    const sessIds  = sid.split(':').slice(1).map(Number);
+    const codes    = sessIds.map(id => { const x = SESSIONS.find(y => y.id === id); return x ? x.session_code : ''; }).filter(Boolean);
     return '<div class="session-info"><strong>' + s.year + ' Round ' + s.round_number +
            '</strong> &nbsp;·&nbsp; ' + s.event_name +
-           ' &nbsp;·&nbsp; <strong>Combined Qualifying</strong> (best of Q1 + Q2)</div>';
+           ' &nbsp;·&nbsp; <strong>Combined Qualifying</strong> (best of ' + codes.join(' + ') + ')</div>';
   }
   const s = SESSIONS.find(x => x.id === sid);
   if (!s) return '';
@@ -646,13 +659,10 @@ function toggleRider(header) {
 
 // ── Combined Qualifying — Results renderer ────────────────────────────────────
 function renderCombinedQualifying(el, sidVal) {
-  const parts = sidVal.split(':');
-  const q1id  = +parts[1];
-  const q2id  = +parts[2];
-  const q1rows = RESULTS[q1id] || [];
-  const q2rows = RESULTS[q2id] || [];
+  const sessIds = sidVal.split(':').slice(1).map(Number);
+  const allRowSets = sessIds.map(id => RESULTS[id] || []);
 
-  if (!q1rows.length && !q2rows.length) {
+  if (allRowSets.every(rows => !rows.length)) {
     el.innerHTML = sessionInfo(sidVal) + '<div class="no-data">No qualifying data found.</div>';
     return;
   }
@@ -670,15 +680,18 @@ function renderCombinedQualifying(el, sidVal) {
       rd.best_lap  = r.best_lap;
       rd.from_sess = sessCode;
     }
-    // Best sector times across both sessions
+    // Best sector times across all sessions
     if (r.s1    !== null && (rd.s1    === null || r.s1    < rd.s1))    rd.s1    = r.s1;
     if (r.s2    !== null && (rd.s2    === null || r.s2    < rd.s2))    rd.s2    = r.s2;
     if (r.s3    !== null && (rd.s3    === null || r.s3    < rd.s3))    rd.s3    = r.s3;
     if (r.s4    !== null && (rd.s4    === null || r.s4    < rd.s4))    rd.s4    = r.s4;
     if (r.speed !== null && (rd.speed === null || r.speed > rd.speed)) rd.speed = r.speed;
   }
-  q1rows.forEach(r => mergeRow(r, 'Q1'));
-  q2rows.forEach(r => mergeRow(r, 'Q2'));
+  sessIds.forEach((id, i) => {
+    const s = SESSIONS.find(x => x.id === id);
+    const code = s ? s.session_code : ('Q' + (i + 1));
+    (RESULTS[id] || []).forEach(r => mergeRow(r, code));
+  });
 
   const sorted = Object.values(allRiders).sort((a, b) => {
     if (a.best_secs === null && b.best_secs === null) return 0;
@@ -741,31 +754,28 @@ function renderCombinedQualifying(el, sidVal) {
 
 // ── Combined Qualifying — Laps renderer ───────────────────────────────────────
 function renderCombinedQualifyingLaps(el, sidVal) {
-  const parts  = sidVal.split(':');
-  const q1id   = +parts[1];
-  const q2id   = +parts[2];
-  const q1laps = LAPS[q1id] || {};
-  const q2laps = LAPS[q2id] || {};
+  const sessIds = sidVal.split(':').slice(1).map(Number);
+  const sessLapsAll = sessIds.map(id => LAPS[id] || {});
 
-  const allNames = [...new Set([...Object.keys(q1laps), ...Object.keys(q2laps)])];
+  const allNames = [...new Set(sessLapsAll.flatMap(laps => Object.keys(laps)))];
   if (!allNames.length) {
     el.innerHTML = sessionInfo(sidVal) + '<div class="no-data">No lap data for this session.</div>';
     return;
   }
 
-  // Find each rider's single fastest non-pit lap from either Q1 or Q2
+  // Find each rider's single fastest non-pit lap across all sessions
   const riderBest = {};
   allNames.forEach(name => {
     let bestSecs = null, bestLap = null, fromSess = null;
-    function check(sessLaps, sessLabel) {
-      (sessLaps[name] || []).forEach(l => {
+    sessIds.forEach((id, i) => {
+      const s = SESSIONS.find(x => x.id === id);
+      const label = s ? s.session_code : ('Q' + (i + 1));
+      ((sessLapsAll[i])[name] || []).forEach(l => {
         if (!l.pit && l.secs !== null && (bestSecs === null || l.secs < bestSecs)) {
-          bestSecs = l.secs; bestLap = l; fromSess = sessLabel;
+          bestSecs = l.secs; bestLap = l; fromSess = label;
         }
       });
-    }
-    check(q1laps, 'Q1');
-    check(q2laps, 'Q2');
+    });
     if (bestLap) riderBest[name] = { lap: bestLap, secs: bestSecs, from: fromSess };
   });
 
@@ -781,7 +791,7 @@ function renderCombinedQualifyingLaps(el, sidVal) {
 
   // Build a combined results lookup for rider numbers
   const combinedResults = {};
-  [...(RESULTS[q1id] || []), ...(RESULTS[q2id] || [])].forEach(r => {
+  sessIds.flatMap(id => RESULTS[id] || []).forEach(r => {
     if (!combinedResults[r.name]) combinedResults[r.name] = r;
   });
 
