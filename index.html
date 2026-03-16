@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Adam's King of The Baggers Visualizer</title>
+<title>Adam's MotoAmerica Visualizer</title>
 <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
 <script>document.write('<script src="motodata.js?v=' + Date.now() + '"><\/script>');</script>
 <style>
@@ -23,6 +23,14 @@
                background: #fff; border-radius: 10px; padding: 8px;
                box-shadow: 0 6px 24px rgba(0,0,0,0.55); z-index: 10; }
   .logo-wrap img { height: 96px; width: auto; display: block; border-radius: 6px; }
+
+  .class-toggle { display:inline-flex; background:rgba(255,255,255,.15);
+                  border-radius:20px; padding:3px; gap:2px; margin-left:8px; }
+  .class-btn    { padding:5px 16px; border:none; background:transparent;
+                  border-radius:18px; cursor:pointer; font-size:13px; font-weight:600;
+                  color:rgba(255,255,255,.7); transition:all .15s; white-space:nowrap; }
+  .class-btn.active            { background:#fff; color:#1a1a2e; }
+  .class-btn:hover:not(.active){ background:rgba(255,255,255,.25); color:#fff; }
 
   .controls { background: #fff; border-bottom: 1px solid #ddd;
               padding: 12px 24px; display: flex; gap: 16px; flex-wrap: wrap;
@@ -59,8 +67,12 @@
   tr:hover td { background: #fafafa; }
   .pos { font-weight: 700; font-size: 15px; width: 32px; }
   .pos-dnf { color: #c0392b; font-size: 12px; font-weight: 600; }
-  .make-hd  { color: #ff6b00; font-weight: 700; font-size: 11px; }
-  .make-ind { color: #003087; font-weight: 700; font-size: 11px; }
+  .make-hd  { color: #e05c00; font-weight: 700; font-size: 11px; }
+  .make-ind { color: #cc0000; font-weight: 700; font-size: 11px; }
+  .make-yam { color: #0a4cad; font-weight: 700; font-size: 11px; }
+  .make-duc { color: #cc0000; font-weight: 700; font-size: 11px; }
+  .make-suz { color: #c8a000; font-weight: 700; font-size: 11px; }
+  .make-kaw { color: #1a7a1a; font-weight: 700; font-size: 11px; }
   .make-other { color: #555; font-weight: 700; font-size: 11px; }
   .best-lap { font-weight: 600; }
   .gap-val { color: #e74c3c; }
@@ -149,9 +161,13 @@
 <body>
 
 <header>
-  <h1>Adam's King of The Baggers Visualizer</h1>
+  <h1>Adam's MotoAmerica Visualizer</h1>
+  <div class="class-toggle">
+    <button class="class-btn active" id="btn-ktb" onclick="setClass('KTB')">King of the Baggers</button>
+    <button class="class-btn"        id="btn-ssp" onclick="setClass('SSP')">Supersport</button>
+  </div>
   <span id="db-summary"></span>
-  <div class="logo-wrap"><img src="ScraperLogo.jpg" alt="Logo"></div>
+  <div class="logo-wrap"><img id="class-logo" src="KTB_logo.jpg" alt="Logo"></div>
 </header>
 
 <div class="controls">
@@ -245,15 +261,43 @@ function makeClass(make) {
   const u = make.toUpperCase();
   if (u === 'HD')  return 'make-hd';
   if (u === 'IND') return 'make-ind';
+  if (u === 'YAM') return 'make-yam';
+  if (u === 'DUC') return 'make-duc';
+  if (u === 'SUZ') return 'make-suz';
+  if (u === 'KAW') return 'make-kaw';
   return 'make-other';
 }
+// ── Class toggle state ────────────────────────────────────────────────────────
+let selectedClass = 'KTB';
+
+function rebuildRiderNames() {
+  const classWeekend = Object.values(WEEKEND).filter(ev => ev.class_code === selectedClass);
+  const classPoints  = Object.values(POINTS[selectedClass] || {});
+  ALL_RIDER_NAMES = [...new Set([
+    ...classWeekend.flatMap(ev => Object.keys(ev.riders)),
+    ...classPoints.flatMap(yr => Object.keys(yr.riders || {})),
+  ])].sort();
+}
+
+function setClass(cls) {
+  selectedClass = cls;
+  document.getElementById('btn-ktb').classList.toggle('active', cls === 'KTB');
+  document.getElementById('btn-ssp').classList.toggle('active', cls === 'SSP');
+  document.getElementById('class-logo').src = cls === 'KTB' ? 'KTB_logo.jpg' : 'SSP_logo.png';
+  Object.keys(wpStyles).forEach(k => delete wpStyles[k]);
+  Object.keys(ptsStyles).forEach(k => delete ptsStyles[k]);
+  rebuildRiderNames();
+  populateYears();
+  populateEvents();
+  populateYoYTracks();
+  updateDbSummary();
+  renderActive();
+}
+
 // ── Per-rider style state ─────────────────────────────────────────────────────
 // Build a stable global alphabetical list of ALL rider names so every rider
 // always receives the same auto-color, regardless of which event is loaded first.
-const ALL_RIDER_NAMES = [...new Set([
-  ...Object.values(WEEKEND).flatMap(ev => Object.keys(ev.riders)),
-  ...Object.values(POINTS).flatMap(yr => Object.keys(yr.riders)),
-])].sort();
+let ALL_RIDER_NAMES = [];
 
 const wpStyles  = {};   // { riderName: { color, dash, symbol } }
 const ptsStyles = {};   // { riderName: { color, dash, symbol } }
@@ -351,18 +395,24 @@ const selYear    = document.getElementById('sel-year');
 const selEvent   = document.getElementById('sel-event');
 const selSession = document.getElementById('sel-session');
 
-const years = [...new Set(SESSIONS.map(s => s.year))].sort((a,b) => b - a);
-years.forEach(y => {
-  const o = document.createElement('option');
-  o.value = y; o.textContent = y; selYear.appendChild(o);
-});
-selYear.value = years[0] || '';
+function populateYears() {
+  const years = [...new Set(
+    SESSIONS.filter(s => s.class_code === selectedClass).map(s => s.year)
+  )].sort((a, b) => b - a);
+  const prev = +selYear.value || null;
+  selYear.innerHTML = '<option value="">All</option>';
+  years.forEach(y => {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y; selYear.appendChild(o);
+  });
+  selYear.value = (prev && years.includes(prev)) ? prev : (years[0] || '');
+}
 
 function populateEvents() {
   const year = +selYear.value || null;
   selEvent.innerHTML = '<option value="">All</option>';
   const seen = new Set();
-  SESSIONS.filter(s => !year || s.year === year).forEach(s => {
+  SESSIONS.filter(s => s.class_code === selectedClass && (!year || s.year === year)).forEach(s => {
     const key = s.event_code;
     if (!seen.has(key)) {
       seen.add(key);
@@ -379,7 +429,7 @@ function populateSessions() {
   const year  = +selYear.value || null;
   const event = selEvent.value || null;
   selSession.innerHTML = '<option value="">— pick session —</option>';
-  const filtered = SESSIONS.filter(s => (!year || s.year === year) && (!event || s.event_code === event));
+  const filtered = SESSIONS.filter(s => s.class_code === selectedClass && (!year || s.year === year) && (!event || s.event_code === event));
   const q1 = filtered.find(s => s.session_code === 'Q1');
   const q2 = filtered.find(s => s.session_code === 'Q2');
   filtered.forEach(s => {
@@ -793,7 +843,7 @@ function renderWeekendChart() {
     return;
   }
 
-  const key  = year + '_' + event;
+  const key  = selectedClass + '_' + year + '_' + event;
   const data = WEEKEND[key];
   if (!data) {
     Plotly.purge(el);
@@ -831,7 +881,7 @@ function renderWeekendChart() {
       hovertemplate: '<b>%{fullData.name}</b><br>' +
                      (isPos ? 'Position: %{text}' : 'Lap Time: %{text}') +
                      '<extra></extra>',
-      connectgaps: false,
+      connectgaps: true,
     };
   });
 
@@ -891,7 +941,7 @@ function renderPointsChart() {
     return;
   }
 
-  const data = POINTS[year];
+  const data = (POINTS[selectedClass] || {})[year];
   if (!data || !data.race_labels.length) {
     Plotly.purge(el);
     el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888">No race data available for ' + year + '.</div>';
@@ -932,7 +982,7 @@ function renderPointsChart() {
   const maxPos = allNames.length;
   const layout = {
     title: {
-      text: year + ' KTB Championship Standings',
+      text: year + ' ' + selectedClass + ' Championship Standings',
       font: { size: 16 },
     },
     xaxis: {
@@ -979,10 +1029,18 @@ const selTrack  = document.getElementById('sel-track');
 const selRider  = document.getElementById('sel-rider');
 const selRider2 = document.getElementById('sel-rider-2');
 
-const YOY_SESSION_ORDER = {'P1':1,'P2':2,'P3':3,'Q1':4,'Q2':5,'R1':6,'WU':7,'R2':8};
+const YOY_SESSION_ORDER = {
+  'P1':1,'P2':2,'P3':3,
+  'Q1':4,'Q1A':4,'Q1B':5,
+  'Q2':6,'Q2A':6,'Q2B':7,
+  'TA':8,
+  'R1':9,'WU':10,'R2':11,
+};
 const YOY_SESSION_LABELS = {
   'P1':'Practice 1','P2':'Practice 2','P3':'Practice 3',
-  'Q1':'Qualifying 1','Q2':'Qualifying 2',
+  'Q1':'Qualifying 1','Q1A':'Qualifying 1A','Q1B':'Qualifying 1B',
+  'Q2':'Qualifying 2','Q2A':'Qualifying 2A','Q2B':'Qualifying 2B',
+  'TA':'Time Attack',
   'WU':'Warm Up','R1':'Race 1','R2':'Race 2',
 };
 
@@ -990,7 +1048,7 @@ function populateYoYTracks() {
   // Group by event_name — the selector value IS the event_name
   const seen = new Set();
   const names = [];
-  Object.values(WEEKEND).forEach(ev => {
+  Object.values(WEEKEND).filter(ev => ev.class_code === selectedClass).forEach(ev => {
     if (!seen.has(ev.event_name)) { seen.add(ev.event_name); names.push(ev.event_name); }
   });
   names.sort();
@@ -1010,7 +1068,7 @@ function populateYoYRiders() {
   // Collect all riders with data at this track name (any year/code)
   const riderNums = {};
   Object.values(WEEKEND)
-    .filter(ev => ev.event_name === trackName)
+    .filter(ev => ev.class_code === selectedClass && ev.event_name === trackName)
     .forEach(ev => {
       Object.entries(ev.riders).forEach(([name, rd]) => {
         if (!riderNums[name]) riderNums[name] = rd.number;
@@ -1052,9 +1110,9 @@ function renderYoYTable() {
     return;
   }
 
-  // All WEEKEND entries matching this event_name, sorted by year then round
+  // All WEEKEND entries matching this event_name and class, sorted by year then round
   const entries = Object.values(WEEKEND)
-    .filter(ev => ev.event_name === trackName)
+    .filter(ev => ev.class_code === selectedClass && ev.event_name === trackName)
     .sort((a, b) => a.year - b.year || a.round_number - b.round_number);
 
   if (!entries.length) {
@@ -1208,15 +1266,21 @@ selRider.addEventListener('change',  renderYoYTable);
 selRider2.addEventListener('change', renderYoYTable);
 
 // ── DB summary ────────────────────────────────────────────────────────────────
-const nYears    = new Set(SESSIONS.map(s => s.year)).size;
-const nEvents   = new Set(SESSIONS.map(s => s.event_code + s.year)).size;
-const nSessions = SESSIONS.length;
-document.getElementById('db-summary').textContent =
-  nYears + ' seasons · ' + nEvents + ' events · ' + nSessions + ' sessions';
+function updateDbSummary() {
+  const clsSessions = SESSIONS.filter(s => s.class_code === selectedClass);
+  const nYears    = new Set(clsSessions.map(s => s.year)).size;
+  const nEvents   = new Set(clsSessions.map(s => s.event_code + s.year)).size;
+  const nSessions = clsSessions.length;
+  document.getElementById('db-summary').textContent =
+    nYears + ' seasons · ' + nEvents + ' events · ' + nSessions + ' sessions';
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+rebuildRiderNames();
+populateYears();
 populateEvents();
 populateYoYTracks();
+updateDbSummary();
 </script>
 </body>
 </html>
