@@ -156,6 +156,56 @@
   /* ── YoY two-rider comparison ── */
   .yoy-r2 { color: #2c7be5; }
   .yoy-cell-line { display: block; line-height: 1.6; }
+
+  /* ── Mobile responsive ── */
+  @media (max-width: 600px) {
+    /* Header: stack vertically, un-absolute the logo */
+    header {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 10px 12px;
+      padding-right: 12px;
+    }
+    .logo-wrap {
+      position: static;
+      height: 56px;
+      margin-bottom: 6px;
+    }
+    .logo-wrap img { height: 56px; }
+
+    /* Controls: 2-per-row grid, full-width selects */
+    .controls { padding: 10px 12px; gap: 8px; }
+    .ctrl-group { flex: 1 1 calc(50% - 4px); }
+    select { min-width: 0; width: 100%; }
+
+    /* Tabs: horizontal scroll, hidden scrollbar */
+    .tabs {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 0 12px;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { padding: 8px 12px; font-size: 13px; }
+
+    /* Content padding */
+    .content { padding: 12px; }
+
+    /* Table cells — smaller on mobile */
+    th { padding: 7px 8px; font-size: 11px; }
+    td { padding: 5px 8px; font-size: 12px; }
+    td.num { font-size: 11px; }
+
+    /* Hide sector columns on phones — too narrow */
+    .col-sector { display: none; }
+
+    /* Charts — shorter so they fit in viewport */
+    #weekend-chart, #points-chart { height: 350px; }
+    .chart-wrap { padding: 10px; }
+
+    /* Chart toolbar — wrap buttons on small screens */
+    .chart-toolbar { flex-wrap: wrap; gap: 8px; }
+  }
 </style>
 </head>
 <body>
@@ -246,6 +296,19 @@
 </div>
 
 <script>
+// ── Mobile helpers ────────────────────────────────────────────────────────────
+function _isMobile() { return window.innerWidth <= 600; }
+
+function _chartLayout(base) {
+  if (_isMobile()) {
+    return Object.assign({}, base, {
+      margin: { t: 40, b: 90, l: 45, r: 20 },
+      legend: { orientation: 'h', x: 0, y: -0.30, xanchor: 'left', font: { size: 10 } },
+    });
+  }
+  return base;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmtSec(s) {
   if (s === null || s === undefined) return '—';
@@ -547,11 +610,11 @@ function renderResults() {
   html += '<th class="num">Best Lap</th>';
   if (hasInLap) html += '<th class="num">In Lap</th>';
   html += '<th class="num">Gap</th>';
-  if (hasS1) html += '<th class="num sector">S1</th>';
-  if (hasS2) html += '<th class="num sector">S2</th>';
-  if (hasS3) html += '<th class="num sector">S3</th>';
-  if (hasS4) html += '<th class="num sector">S4</th>';
-  if (hasSpd) html += '<th class="num">MPH</th>';
+  if (hasS1) html += '<th class="num sector col-sector">S1</th>';
+  if (hasS2) html += '<th class="num sector col-sector">S2</th>';
+  if (hasS3) html += '<th class="num sector col-sector">S3</th>';
+  if (hasS4) html += '<th class="num sector col-sector">S4</th>';
+  if (hasSpd) html += '<th class="num col-sector">MPH</th>';
   html += '</tr></thead><tbody>';
 
   rows.forEach(r => {
@@ -570,15 +633,15 @@ function renderResults() {
     html += '<td class="num gap-val">' + (r.gap !== null && r.gap !== undefined ? '+' + r.gap.toFixed(3) : '—') + '</td>';
 
     function sCell(val, fastest) {
-      if (!val) return '<td class="num sector">—</td>';
+      if (!val) return '<td class="num sector col-sector">—</td>';
       const isFastest = fastest !== null && Math.abs(val - fastest) < 0.0001;
-      return '<td class="num sector" style="' + (isFastest ? 'font-weight:700;color:#27ae60' : '') + '">' + fmtSector(val) + '</td>';
+      return '<td class="num sector col-sector" style="' + (isFastest ? 'font-weight:700;color:#27ae60' : '') + '">' + fmtSector(val) + '</td>';
     }
     if (hasS1) html += sCell(r.s1, fastS1);
     if (hasS2) html += sCell(r.s2, fastS2);
     if (hasS3) html += sCell(r.s3, fastS3);
     if (hasS4) html += sCell(r.s4, fastS4);
-    if (hasSpd) html += '<td class="num">' + (r.speed ? r.speed.toFixed(1) : '—') + '</td>';
+    if (hasSpd) html += '<td class="num col-sector">' + (r.speed ? r.speed.toFixed(1) : '—') + '</td>';
     html += '</tr>';
   });
 
@@ -718,17 +781,17 @@ function renderCombinedQualifying(el, sidVal) {
   let html = sessionInfo(sidVal) + '<div class="results-wrap"><table><thead><tr>';
   html += '<th>Pos</th><th>#</th><th>Rider</th><th>Make</th><th>Sess</th>';
   html += '<th class="num">Best Lap</th><th class="num">Gap</th>';
-  if (hasS1) html += '<th class="num sector">S1</th>';
-  if (hasS2) html += '<th class="num sector">S2</th>';
-  if (hasS3) html += '<th class="num sector">S3</th>';
-  if (hasS4) html += '<th class="num sector">S4</th>';
-  if (hasSpd) html += '<th class="num">MPH</th>';
+  if (hasS1) html += '<th class="num sector col-sector">S1</th>';
+  if (hasS2) html += '<th class="num sector col-sector">S2</th>';
+  if (hasS3) html += '<th class="num sector col-sector">S3</th>';
+  if (hasS4) html += '<th class="num sector col-sector">S4</th>';
+  if (hasSpd) html += '<th class="num col-sector">MPH</th>';
   html += '</tr></thead><tbody>';
 
   function sCell(val, fastest) {
-    if (val === null) return '<td class="num sector">—</td>';
+    if (val === null) return '<td class="num sector col-sector">—</td>';
     const isFastest = fastest !== null && Math.abs(val - fastest) < 0.0001;
-    return '<td class="num sector" style="' + (isFastest ? 'font-weight:700;color:#27ae60' : '') + '">' + val.toFixed(3) + '</td>';
+    return '<td class="num sector col-sector" style="' + (isFastest ? 'font-weight:700;color:#27ae60' : '') + '">' + val.toFixed(3) + '</td>';
   }
 
   sorted.forEach(r => {
@@ -744,7 +807,7 @@ function renderCombinedQualifying(el, sidVal) {
     if (hasS2) html += sCell(r.s2, fastS2);
     if (hasS3) html += sCell(r.s3, fastS3);
     if (hasS4) html += sCell(r.s4, fastS4);
-    if (hasSpd) html += '<td class="num">' + (r.speed ? r.speed.toFixed(1) : '—') + '</td>';
+    if (hasSpd) html += '<td class="num col-sector">' + (r.speed ? r.speed.toFixed(1) : '—') + '</td>';
     html += '</tr>';
   });
 
@@ -927,7 +990,7 @@ function renderWeekendChart() {
     paper_bgcolor: '#fff',
   };
 
-  Plotly.react(el, traces, layout, { responsive: true });
+  Plotly.react(el, traces, _chartLayout(layout), { responsive: true });
   renderStylePanel('weekend-style-panel', 'weekend-chart', wpStyles, allNames, data.riders);
 }
 
@@ -1022,7 +1085,7 @@ function renderPointsChart() {
     paper_bgcolor: '#fff',
   };
 
-  Plotly.react(el, traces, layout, { responsive: true });
+  Plotly.react(el, traces, _chartLayout(layout), { responsive: true });
   renderStylePanel('points-style-panel', 'points-chart', ptsStyles, allNames, data.riders);
 
   const noteEl = document.getElementById('pts-chart-note');
@@ -1291,6 +1354,16 @@ populateYears();
 populateEvents();
 populateYoYTracks();
 updateDbSummary();
+
+// ── Responsive chart re-render on resize ──────────────────────────────────
+let _resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    if (activeTab === 'weekend') renderWeekendChart();
+    if (activeTab === 'points')  renderPointsChart();
+  }, 200);
+});
 </script>
 </body>
 </html>
