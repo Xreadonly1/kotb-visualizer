@@ -110,6 +110,45 @@
   #weekend-chart, #points-chart { width: 100%; height: 580px; }
   .chart-note { font-size: 12px; color: #888; margin-top: 8px; }
 
+  /* ── Season Points Table ── */
+  .pts-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch;
+                    border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.1);
+                    margin-bottom: 16px; }
+  .pts-table { width: 100%; border-collapse: collapse; background: #fff;
+               font-size: 13px; }
+  .pts-table thead th { background: #1a1a2e; color: #fff; padding: 8px 10px;
+                        font-size: 11px; font-weight: 600; letter-spacing: .04em;
+                        text-align: center; white-space: nowrap; }
+  .pts-table thead th.pts-col-name { text-align: left; position: sticky; left: 0;
+                                     z-index: 2; background: #1a1a2e; }
+  .pts-table td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0;
+                  text-align: center; }
+  .pts-table td.pts-col-name { text-align: left; font-weight: 500; white-space: nowrap;
+                                position: sticky; left: 0; z-index: 1; background: #fff; }
+  .pts-table tr:hover td { background: #f5f7ff; }
+  .pts-table tr:hover td.pts-col-name { background: #f5f7ff; }
+  .pts-table td.pts-col-pos { color: #888; font-weight: 700; min-width: 36px; }
+  .pts-table td.pts-col-num { font-family: "SF Mono","Consolas",monospace;
+                               font-size: 12px; color: #555; min-width: 36px; }
+  .pts-table thead th.pts-col-race-hdr { white-space: normal; width: 62px;
+                                          min-width: 62px; max-width: 62px;
+                                          line-height: 1.3; }
+  .pts-table td.pts-col-race { font-family: "SF Mono","Consolas",monospace;
+                                font-size: 12px; width: 62px; min-width: 62px;
+                                max-width: 62px; }
+  .pts-table td.pts-zero { color: #ccc; }
+  .pts-table td.pts-p1 { background: #c0392b; color: #fff; font-weight: 700; }
+  .pts-table td.pts-p2 { background: #2563b0; color: #fff; font-weight: 700; }
+  .pts-table td.pts-p3 { background: #9e9e9e; color: #fff; font-weight: 700; }
+  .pts-table tr:hover td.pts-p1 { background: #a93226; }
+  .pts-table tr:hover td.pts-p2 { background: #1a4f8a; }
+  .pts-table tr:hover td.pts-p3 { background: #8a8a8a; }
+  .pts-table td.pts-col-total { font-weight: 700; color: #1a1a2e; min-width: 48px; }
+  .pts-table tr:last-child td { border-bottom: none; }
+  .pts-table tfoot td.pts-footer { text-align: left; font-size: 11px; color: #888;
+                                   padding: 7px 10px; border-top: 1px solid #e0e0e0;
+                                   background: #fafafa; white-space: normal; }
+
   /* ── Style panel ── */
   .style-panel { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px;
                  padding: 14px 16px; margin-top: 12px; }
@@ -201,6 +240,12 @@
 
     /* Charts — shorter so they fit in viewport */
     #weekend-chart, #points-chart { height: 350px; }
+
+    /* Points table — compact on mobile */
+    .pts-table { font-size: 11px; }
+    .pts-table thead th { padding: 6px 6px; font-size: 10px; }
+    .pts-table td { padding: 4px 6px; font-size: 11px; }
+    .pts-table td.pts-col-race { min-width: 34px; }
     .chart-wrap { padding: 10px; }
 
     /* Chart toolbar — wrap buttons on small screens */
@@ -277,6 +322,7 @@
 
   <!-- Season Points -->
   <div id="tab-points" style="display:none">
+    <div id="points-table"></div>
     <div class="chart-toolbar">
       <span class="label">View:</span>
       <div class="toggle-group">
@@ -994,6 +1040,70 @@ function renderWeekendChart() {
   renderStylePanel('weekend-style-panel', 'weekend-chart', wpStyles, allNames, data.riders);
 }
 
+// ── Season Points Table ───────────────────────────────────────────────────────
+function renderPointsTable() {
+  const el   = document.getElementById('points-table');
+  const year = selYear.value;
+  if (!year) { el.innerHTML = ''; return; }
+
+  const data = (POINTS[selectedClass] || {})[year];
+  if (!data || !data.race_labels || !data.race_labels.length) {
+    el.innerHTML = ''; return;
+  }
+
+  const labels = data.race_labels;
+
+  // Sort by final cumulative total descending
+  const sorted = Object.keys(data.riders).sort((a, b) => {
+    const ca = data.riders[a].cumulative;
+    const cb = data.riders[b].cumulative;
+    return (cb[cb.length - 1] || 0) - (ca[ca.length - 1] || 0);
+  });
+
+  // Build 2-line header labels: "Road Atlanta<br><span>R1</span>"
+  function hdr(lbl) {
+    const m = lbl.match(/^(.*)[ 	]+(R[12])$/);
+    if (m) return m[1] + '<br><span style="opacity:.65">' + m[2] + '</span>';
+    return lbl;
+  }
+
+  let html = '<div class="pts-table-wrap"><table class="pts-table"><thead><tr>';
+  html += '<th class="pts-col-pos">Pos</th>';
+  html += '<th class="pts-col-num">#</th>';
+  html += '<th class="pts-col-name">Rider</th>';
+  html += '<th class="pts-col-total">Total</th>';
+  for (const lbl of labels) html += '<th class="pts-col-race-hdr">' + hdr(lbl) + '</th>';
+  html += '</tr></thead><tbody>';
+
+  sorted.forEach((name, idx) => {
+    const rd    = data.riders[name];
+    const total = rd.cumulative[rd.cumulative.length - 1] || 0;
+    html += '<tr>';
+    html += '<td class="pts-col-pos">' + (idx + 1) + '</td>';
+    html += '<td class="pts-col-num">' + rd.number + '</td>';
+    html += '<td class="pts-col-name">' + name + '</td>';
+    html += '<td class="pts-col-total">' + total + '</td>';
+    for (const pts of rd.race_pts) {
+      let cls = 'pts-col-race';
+      if      (pts === 25) cls += ' pts-p1';
+      else if (pts === 20) cls += ' pts-p2';
+      else if (pts === 16) cls += ' pts-p3';
+      else if (pts === 0)  cls += ' pts-zero';
+      html += '<td class="' + cls + '">' + (pts > 0 ? pts : '&mdash;') + '</td>';
+    }
+    html += '</tr>';
+  });
+
+  const totalCols = 4 + labels.length; // Pos + # + Rider + Total + race cols
+  html += '</tbody><tfoot><tr><td colspan="' + totalCols + '" class="pts-footer">'
+        + 'Points per finish position &mdash; '
+        + '1st&nbsp;25 &ensp;&bull;&ensp; 2nd&nbsp;20 &ensp;&bull;&ensp; 3rd&nbsp;16 &ensp;&bull;&ensp; 4th&nbsp;13 &ensp;&bull;&ensp; '
+        + '5th&nbsp;11 &ensp;&bull;&ensp; 6th&nbsp;9 &ensp;&bull;&ensp; 7th&nbsp;7 &ensp;&bull;&ensp; 8th&nbsp;5 &ensp;&bull;&ensp; '
+        + '9th&nbsp;3 &ensp;&bull;&ensp; 10th&nbsp;1'
+        + '</td></tr></tfoot></table></div>';
+  el.innerHTML = html;
+}
+
 // ── Season Points Chart ───────────────────────────────────────────────────────
 let ptsMode = 'position';
 
@@ -1009,6 +1119,7 @@ function renderPointsChart() {
   const year = selYear.value;
 
   if (!year) {
+    renderPointsTable();
     Plotly.purge(el);
     el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888">Select a Year above to view the championship standings.</div>';
     return;
@@ -1016,10 +1127,13 @@ function renderPointsChart() {
 
   const data = (POINTS[selectedClass] || {})[year];
   if (!data || !data.race_labels.length) {
+    renderPointsTable();
     Plotly.purge(el);
     el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888">No race data available for ' + year + '.</div>';
     return;
   }
+
+  renderPointsTable();
 
   // Sort riders by final cumulative points descending (championship leaders first)
   const allNames = Object.keys(data.riders).sort((a, b) => {
