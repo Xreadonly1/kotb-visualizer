@@ -149,6 +149,16 @@
                                    padding: 7px 10px; border-top: 1px solid #e0e0e0;
                                    background: #fafafa; white-space: normal; }
 
+  /* ── Weekend Progression Table (extends pts-table) ── */
+  table.wp-table thead th.wp-sess-hdr { white-space: normal; width: 52px;
+                                         min-width: 52px; max-width: 52px;
+                                         line-height: 1.3; }
+  table.wp-table td.wp-sess { width: 52px; min-width: 52px; max-width: 52px;
+                               font-family: "SF Mono","Consolas",monospace; font-size: 12px; }
+  table.wp-table td.wp-sess-time { width: 76px; min-width: 76px; max-width: 76px;
+                                    font-family: "SF Mono","Consolas",monospace; font-size: 11px; }
+  .pts-table td.wp-best { background: #d4edda; color: #155724; font-weight: 700; }
+
   /* ── Style panel ── */
   .style-panel { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px;
                  padding: 14px 16px; margin-top: 12px; }
@@ -246,6 +256,11 @@
     .pts-table thead th { padding: 6px 6px; font-size: 10px; }
     .pts-table td { padding: 4px 6px; font-size: 11px; }
     .pts-table td.pts-col-race { min-width: 34px; }
+
+    /* Weekend table — compact on mobile */
+    table.wp-table thead th.wp-sess-hdr { width: 42px; min-width: 42px; max-width: 42px; }
+    table.wp-table td.wp-sess { width: 42px; min-width: 42px; max-width: 42px; font-size: 10px; }
+    table.wp-table td.wp-sess-time { width: 62px; min-width: 62px; max-width: 62px; font-size: 10px; }
     .chart-wrap { padding: 10px; }
 
     /* Chart toolbar — wrap buttons on small screens */
@@ -306,6 +321,14 @@
 
   <!-- Weekend Progression -->
   <div id="tab-weekend" style="display:none">
+    <div class="chart-toolbar">
+      <span class="label">Table View:</span>
+      <div class="toggle-group">
+        <button class="toggle-btn active" id="wpt-pos-btn"  onclick="setWpTableMode('position')">Position</button>
+        <button class="toggle-btn"        id="wpt-time-btn" onclick="setWpTableMode('time')">Lap Time</button>
+      </div>
+    </div>
+    <div id="weekend-table"></div>
     <div class="chart-toolbar">
       <span class="label">View:</span>
       <div class="toggle-group">
@@ -942,7 +965,8 @@ function renderCombinedQualifyingLaps(el, sidVal) {
 }
 
 // ── Weekend Progression Chart ─────────────────────────────────────────────────
-let wpMode = 'position';
+let wpMode      = 'position';
+let wpTableMode = 'position';
 
 function setWpMode(mode) {
   wpMode = mode;
@@ -951,12 +975,95 @@ function setWpMode(mode) {
   renderWeekendChart();
 }
 
+function setWpTableMode(mode) {
+  wpTableMode = mode;
+  document.getElementById('wpt-pos-btn').classList.toggle('active',  mode === 'position');
+  document.getElementById('wpt-time-btn').classList.toggle('active', mode === 'time');
+  renderWeekendTable();
+}
+
+function renderWeekendTable() {
+  const el    = document.getElementById('weekend-table');
+  const year  = selYear.value;
+  const event = selEvent.value;
+  if (!year || !event) { el.innerHTML = ''; return; }
+
+  const key  = selectedClass + '_' + year + '_' + event;
+  const data = WEEKEND[key];
+  if (!data) { el.innerHTML = ''; return; }
+
+  const sessions = data.sessions;
+  const isPos    = (wpTableMode === 'position');
+
+  // Sort riders: R2 position → R1 position → last session → nulls last
+  const sortIdx = (() => {
+    const r2 = sessions.indexOf('R2');
+    if (r2 >= 0) return r2;
+    const r1 = sessions.indexOf('R1');
+    if (r1 >= 0) return r1;
+    return sessions.length - 1;
+  })();
+
+  const sorted = Object.keys(data.riders).sort((a, b) => {
+    const pa = data.riders[a].positions[sortIdx];
+    const pb = data.riders[b].positions[sortIdx];
+    if (pa === null && pb === null) return 0;
+    if (pa === null) return 1;
+    if (pb === null) return -1;
+    return pa - pb;
+  });
+
+  // In time mode: find fastest time per session for green highlight
+  const fastestTime = sessions.map((_, si) => {
+    const times = sorted.map(n => data.riders[n].times[si]).filter(t => t !== null);
+    return times.length ? Math.min(...times) : null;
+  });
+
+  const sessCls = isPos ? 'wp-sess' : 'wp-sess-time';
+
+  let html = '<div class="pts-table-wrap"><table class="pts-table wp-table"><thead><tr>';
+  html += '<th class="pts-col-num">#</th>';
+  html += '<th class="pts-col-name">Rider</th>';
+  for (const code of sessions) {
+    html += '<th class="wp-sess-hdr">' + code + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  sorted.forEach(name => {
+    const rd = data.riders[name];
+    html += '<tr>';
+    html += '<td class="pts-col-num">' + rd.number + '</td>';
+    html += '<td class="pts-col-name">' + name + '</td>';
+    sessions.forEach((_, si) => {
+      const pos  = rd.positions[si];
+      const time = rd.times[si];
+      const tstr = rd.time_strs[si];
+      if (isPos) {
+        let cls = sessCls;
+        if      (pos === 1) cls += ' pts-p1';
+        else if (pos === 2) cls += ' pts-p2';
+        else if (pos === 3) cls += ' pts-p3';
+        html += '<td class="' + cls + '">' + (pos !== null ? pos : '&mdash;') + '</td>';
+      } else {
+        let cls = sessCls;
+        if (time !== null && time === fastestTime[si]) cls += ' wp-best';
+        html += '<td class="' + cls + '">' + (tstr || '&mdash;') + '</td>';
+      }
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
 function renderWeekendChart() {
   const el    = document.getElementById('weekend-chart');
   const year  = selYear.value;
   const event = selEvent.value;
 
   if (!year || !event) {
+    renderWeekendTable();
     Plotly.purge(el);
     el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888">Select a Year and Event above to view the weekend progression.</div>';
     return;
@@ -965,10 +1072,13 @@ function renderWeekendChart() {
   const key  = selectedClass + '_' + year + '_' + event;
   const data = WEEKEND[key];
   if (!data) {
+    renderWeekendTable();
     Plotly.purge(el);
     el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#888">No data for this selection.</div>';
     return;
   }
+
+  renderWeekendTable();
 
   const allNames = Object.keys(data.riders).sort();
   allNames.forEach(name => initStyle(wpStyles, name));
