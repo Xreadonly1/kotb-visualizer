@@ -278,7 +278,52 @@
 
     /* Chart toolbar — wrap buttons on small screens */
     .chart-toolbar { flex-wrap: wrap; gap: 8px; }
+
+    /* Analyze tab — compact on mobile */
+    .az-section { margin-bottom: 10px; }
+    .az-section-title { font-size: 13px; }
+    .az-table thead th, .az-table td { padding: 4px 6px; font-size: 11px; }
+    .az-badge { font-size: 11px; }
+    #az-sparkline { height: 180px; }
+    #az-compare-chart { height: 200px; }
+    .az-check-label { font-size: 12px; padding: 3px 6px; }
   }
+
+  /* ── Analyze tab ── */
+  .az-section { background: #fff; border-radius: 6px;
+                box-shadow: 0 1px 4px rgba(0,0,0,.1);
+                padding: 16px; margin-bottom: 16px; }
+  .az-section-title { font-size: 14px; font-weight: 700; color: #1a1a2e;
+                      margin: 0 0 12px 0; }
+  .az-table { width: 100%; border-collapse: separate; border-spacing: 0;
+              font-size: 13px; }
+  .az-table thead th { background: #1a1a2e; color: #fff; padding: 7px 10px;
+                       font-size: 11px; font-weight: 600; letter-spacing: .04em;
+                       text-align: center; white-space: nowrap; }
+  .az-table thead th:first-child { text-align: left; }
+  .az-table td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0;
+                 text-align: center; font-size: 12px; }
+  .az-table td:first-child { text-align: left; font-weight: 500; }
+  .az-table tr:last-child td { border-bottom: none; }
+  .az-table tr:hover td { background: #f5f7ff; }
+  .az-mono { font-family: "SF Mono","Consolas",monospace; }
+  .az-field-best { background: #d4edda; color: #155724; font-weight: 700; }
+  .az-badge { display: inline-block; padding: 4px 12px; border-radius: 20px;
+              font-size: 13px; font-weight: 600; margin-left: 10px; }
+  .az-badge-green  { background: #d4edda; color: #155724; }
+  .az-badge-orange { background: #fff3cd; color: #856404; }
+  .az-badge-red    { background: #f8d7da; color: #721c24; }
+  .az-rank-1 { color: #c0392b; font-weight: 700; }
+  .az-rank-2 { color: #2563b0; font-weight: 700; }
+  .az-rank-3 { color: #9e9e9e; font-weight: 700; }
+  #az-sparkline  { width: 100%; height: 260px; }
+  #az-compare-chart { width: 100%; height: 320px; }
+  .az-check-label { display: inline-flex; align-items: center; gap: 5px;
+                    padding: 4px 10px; border-radius: 16px; cursor: pointer;
+                    font-size: 13px; border: 1px solid #ddd; margin: 2px; }
+  .az-check-label input { cursor: pointer; }
+  .az-check-label:has(input:checked) { background: #1a1a2e; color: #fff;
+                                        border-color: #1a1a2e; }
 </style>
 </head>
 <body>
@@ -326,6 +371,7 @@
   <div class="tab" data-tab="weekend">Weekend Progression</div>
   <div class="tab" data-tab="points">Season Points</div>
   <div class="tab" data-tab="yoy">Year-over-Year</div>
+  <div class="tab" data-tab="analyze">Analyze</div>
 </div>
 
 <div class="content">
@@ -375,6 +421,28 @@
 
   <!-- Year-over-Year -->
   <div id="tab-yoy" style="display:none"></div>
+
+  <!-- Analyze -->
+  <div id="tab-analyze" style="display:none">
+    <div class="chart-toolbar" id="az-toolbar">
+      <span class="label">Mode:</span>
+      <div class="toggle-group">
+        <button id="az-single-btn"  class="toggle-btn active" onclick="setAzMode('single')">Single Rider</button>
+        <button id="az-compare-btn" class="toggle-btn"        onclick="setAzMode('compare')">Compare</button>
+      </div>
+      <span id="az-rider-wrap" style="display:flex;align-items:center;gap:8px">
+        <span class="label">Rider:</span>
+        <select id="az-rider-sel" onchange="renderAnalyze()">
+          <option value="">— select rider —</option>
+        </select>
+      </span>
+      <span id="az-compare-wrap" style="display:none;align-items:center;gap:8px">
+        <span class="label">Riders:</span>
+        <span id="az-rider-checks"></span>
+      </span>
+    </div>
+    <div id="az-content"></div>
+  </div>
 </div>
 
 <script>
@@ -612,7 +680,7 @@ selSession.addEventListener('change', renderActive);
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 let activeTab = 'results';
-const TAB_IDS = ['results', 'laps', 'weekend', 'points', 'yoy'];
+const TAB_IDS = ['results', 'laps', 'weekend', 'points', 'yoy', 'analyze'];
 
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => {
@@ -627,9 +695,10 @@ document.querySelectorAll('.tab').forEach(t => {
     const grpSession = document.getElementById('grp-session');
     const grpTrack   = document.getElementById('grp-track');
     const grpRider   = document.getElementById('grp-rider');
-    const isYoY = activeTab === 'yoy';
+    const isYoY     = activeTab === 'yoy';
+    const isAnalyze = activeTab === 'analyze';
     grpEvent.style.display   = (activeTab === 'points' || isYoY) ? 'none' : '';
-    grpSession.style.display = (activeTab === 'weekend' || activeTab === 'points' || isYoY) ? 'none' : '';
+    grpSession.style.display = (activeTab === 'weekend' || activeTab === 'points' || isYoY || isAnalyze) ? 'none' : '';
     grpTrack.style.display   = isYoY ? '' : 'none';
     grpRider.style.display   = isYoY ? '' : 'none';
     document.getElementById('grp-rider-2').style.display = isYoY ? '' : 'none';
@@ -643,6 +712,7 @@ function renderActive() {
   else if (activeTab === 'weekend') renderWeekendChart();
   else if (activeTab === 'points')  renderPointsChart();
   else if (activeTab === 'yoy')     renderYoYTable();
+  else if (activeTab === 'analyze') renderAnalyze();
 }
 
 // ── Session info helper ───────────────────────────────────────────────────────
@@ -1407,6 +1477,301 @@ function populateYoYRiders() {
   if (prevR2 && [...selRider2.options].some(o => o.value === prevR2)) {
     selRider2.value = prevR2;
   }
+}
+
+// ── Analyze Tab ──────────────────────────────────────────────────────────────
+let azMode = 'single';
+const azChecked = new Set();
+
+function setAzMode(mode) {
+  azMode = mode;
+  document.getElementById('az-single-btn').classList.toggle('active', mode === 'single');
+  document.getElementById('az-compare-btn').classList.toggle('active', mode === 'compare');
+  document.getElementById('az-rider-wrap').style.display   = mode === 'single'  ? '' : 'none';
+  document.getElementById('az-compare-wrap').style.display = mode === 'compare' ? '' : 'none';
+  renderAnalyze();
+}
+
+function fmtDelta(s) {
+  if (s === null || s === undefined) return '—';
+  const sign = s >= 0 ? '+' : '';
+  return sign + s.toFixed(3) + 's';
+}
+
+function _rankCls(rank) {
+  if (rank === 1) return 'az-rank-1';
+  if (rank === 2) return 'az-rank-2';
+  if (rank === 3) return 'az-rank-3';
+  return '';
+}
+
+function renderAnalyze() {
+  const key  = selectedClass + '_' + selYear.value + '_' + selEvent.value;
+  const data = ANALYSIS[key];
+  const el   = document.getElementById('az-content');
+
+  // Always reset dropdowns so stale riders from a prior class/event never linger
+  const riderSel   = document.getElementById('az-rider-sel');
+  const checkWrap2 = document.getElementById('az-rider-checks');
+  if (!data || !data.riders || Object.keys(data.riders).length === 0) {
+    riderSel.innerHTML  = '';
+    checkWrap2.innerHTML = '';
+    el.innerHTML = '<p class="no-data">No analysis data for this event.</p>';
+    return;
+  }
+
+  // Populate rider dropdown
+  const prevRider = riderSel.value;
+  riderSel.innerHTML = '';
+  Object.keys(data.riders).sort().forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    riderSel.appendChild(opt);
+  });
+  if (prevRider && [...riderSel.options].some(o => o.value === prevRider)) {
+    riderSel.value = prevRider;
+  }
+
+  // Populate compare checkboxes
+  const checkWrap = checkWrap2;
+  checkWrap.innerHTML = '';
+  Object.keys(data.riders).sort().forEach(name => {
+    const lbl = document.createElement('label');
+    lbl.className = 'az-check-label';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = name;
+    cb.checked = azChecked.has(name);
+    cb.onchange = () => { cb.checked ? azChecked.add(name) : azChecked.delete(name); renderAnalyze(); };
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(' ' + name));
+    checkWrap.appendChild(lbl);
+  });
+
+  el.innerHTML = '';
+  if (azMode === 'single') {
+    renderSingleRider(el, data, riderSel.value);
+  } else {
+    const chosen = Object.keys(data.riders).sort().filter(n => azChecked.has(n));
+    if (chosen.length < 2) {
+      el.innerHTML = '<p class="no-data">Select at least 2 riders to compare.</p>';
+    } else {
+      renderCompare(el, data, chosen);
+    }
+  }
+}
+
+function renderSingleRider(el, data, rName) {
+  const rd = data.riders[rName];
+  if (!rd) return;
+
+  // Section A: Theoretical Best
+  const tb = rd.theoretical_best;
+  let secA = '<div class="az-section"><h3>Theoretical Best Lap</h3>';
+  if (tb) {
+    secA += '<table class="az-table"><thead><tr><th>Sector</th><th>Best Time</th><th>Session</th><th>Lap</th><th>vs Field</th></tr></thead><tbody>';
+    (tb.sectors || ['s1','s2','s3']).forEach(sx => {
+      const isBest = data.field_sector_bests && data.field_sector_bests[sx] &&
+                     data.field_sector_bests[sx].rider === rName;
+      secA += '<tr>'
+        + '<td>' + sx.toUpperCase() + '</td>'
+        + '<td class="' + (isBest ? 'az-field-best' : '') + '">' + (tb[sx] !== null ? tb[sx].toFixed(3) + 's' : '—') + '</td>'
+        + '<td>' + (tb[sx + '_sess'] || '—') + '</td>'
+        + '<td>' + (tb[sx + '_lap']  !== undefined ? tb[sx + '_lap'] : '—') + '</td>'
+        + '<td>' + (isBest ? '<span class="az-badge az-badge-best">Field Best</span>' : '') + '</td>'
+        + '</tr>';
+    });
+    secA += '</tbody><tfoot><tr><td colspan="2"><strong>Total: ' + (tb.total_str || '—') + '</strong></td><td colspan="3"></td></tr></tfoot></table>';
+
+    // Section B: Actual Best + gap-to-ideal
+    if (rd.actual_best && rd.actual_best.time !== null) {
+      const gap = rd.gap_to_ideal;
+      secA += '<div class="az-badge-row"><span class="az-label">Actual Best:</span> <strong>'
+        + (rd.actual_best.time_str || '—') + '</strong>'
+        + ' (' + rd.actual_best.sess + ' Lap ' + rd.actual_best.lap + ')'
+        + (gap !== null ? ' <span class="az-badge az-badge-gap">Gap to Ideal: +' + gap.toFixed(3) + 's</span>' : '')
+        + '</div>';
+    }
+  } else {
+    secA += '<p class="no-data">No sector data available.</p>';
+  }
+  secA += '</div>';
+
+  // Section C: Sector Dominance
+  let secC = '<div class="az-section"><h3>Sector Dominance</h3>';
+  if (rd.sector_ranks) {
+    const activeSects = Object.keys(rd.sector_ranks).filter(k => k.endsWith('_rank')).map(k => k.replace('_rank',''));
+    secC += '<table class="az-table"><thead><tr><th>Sector</th><th>Rank</th><th>Delta to Field</th></tr></thead><tbody>';
+    activeSects.forEach(sx => {
+      const rank  = rd.sector_ranks[sx];
+      const delta = rd.sector_deltas ? rd.sector_deltas[sx] : null;
+      secC += '<tr>'
+        + '<td>' + sx.toUpperCase() + '</td>'
+        + '<td class="' + _rankCls(rank) + '">' + (rank !== null ? '#' + rank : '—') + '</td>'
+        + '<td>' + fmtDelta(delta) + '</td>'
+        + '</tr>';
+    });
+    secC += '</tbody></table>';
+  } else {
+    secC += '<p class="no-data">No sector ranking data.</p>';
+  }
+  secC += '</div>';
+
+  // Section D: Session Stats
+  let secD = '<div class="az-section"><h3>Session Stats</h3>';
+  if (rd.sessions && Object.keys(rd.sessions).length > 0) {
+    secD += '<div class="az-scroll-wrap"><table class="az-table"><thead><tr>'
+      + '<th>Session</th><th>Best Clean</th><th>Median</th><th>Best 5-Lap Avg</th>'
+      + '<th>Lap Std Dev</th><th>S1 Std Dev</th><th>S2 Std Dev</th><th>S3 Std Dev</th><th>S4 Std Dev</th><th>Laps</th>'
+      + '</tr></thead><tbody>';
+    const sessOrder = ['P1','P2','P3','Q1','Q1A','Q1B','Q2','Q2A','Q2B','TA','R1','WU','R2'];
+    const sortedSess = Object.keys(rd.sessions).sort((a,b) => {
+      const ia = sessOrder.indexOf(a), ib = sessOrder.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+    sortedSess.forEach(sess => {
+      const s = rd.sessions[sess];
+      const fmt = v => v !== null && v !== undefined ? v.toFixed(3) : '—';
+      secD += '<tr>'
+        + '<td>' + sess + '</td>'
+        + '<td>' + (s.best_clean_str || '—') + '</td>'
+        + '<td>' + (s.median_clean !== null ? fmtSec(s.median_clean) : '—') + '</td>'
+        + '<td>' + (s.best_5_consec !== null ? fmtSec(s.best_5_consec) : '—') + '</td>'
+        + '<td>' + fmt(s.lap_std) + '</td>'
+        + '<td>' + fmt(s.s1_std) + '</td>'
+        + '<td>' + fmt(s.s2_std) + '</td>'
+        + '<td>' + fmt(s.s3_std) + '</td>'
+        + '<td>' + fmt(s.s4_std) + '</td>'
+        + '<td>' + s.clean_count + '</td>'
+        + '</tr>';
+    });
+    secD += '</tbody></table></div>';
+  } else {
+    secD += '<p class="no-data">No session data available.</p>';
+  }
+  secD += '</div>';
+
+  // Section E: Session Progression Sparkline
+  let secE = '<div class="az-section"><h3>Session Progression</h3>';
+  if (rd.sparkline && rd.sparkline.length > 0) {
+    const labels = rd.sparkline.map(p => p.sess);
+    const bests  = rd.sparkline.map(p => p.best);
+    const hoverText = rd.sparkline.map(p => p.best_str || fmtSec(p.best));
+    secE += '<div id="az-spark-' + rName.replace(/[^a-z0-9]/gi,'_') + '" style="height:220px"></div>';
+    secE += '<script>Plotly.newPlot("az-spark-' + rName.replace(/[^a-z0-9]/gi,'_') + '",'
+      + '[{x:' + JSON.stringify(labels) + ',y:' + JSON.stringify(bests)
+      + ',text:' + JSON.stringify(hoverText)
+      + ',hovertemplate:"%{text}<extra></extra>"'
+      + ',mode:"lines+markers",line:{color:"#e8a020"},marker:{size:7}}],'
+      + '{margin:{t:10,b:40,l:70,r:10},paper_bgcolor:"transparent",plot_bgcolor:"transparent",'
+      + 'font:{color:"#ccc"},xaxis:{color:"#999"},yaxis:{color:"#999",tickformat:".3f"}},'
+      + '{responsive:true,displayModeBar:false});<\/script>';
+  } else {
+    secE += '<p class="no-data">No sparkline data.</p>';
+  }
+  secE += '</div>';
+
+  el.innerHTML = secA + secC + secD + secE;
+  // Re-run any inline scripts (Plotly) — scripts in innerHTML don't execute
+  el.querySelectorAll('script').forEach(old => {
+    const s = document.createElement('script');
+    s.textContent = old.textContent;
+    old.parentNode.replaceChild(s, old);
+  });
+}
+
+function renderCompare(el, data, riderNames) {
+  // Section A: Per-sector delta bar chart (relative to fastest of selected riders)
+  const colors = ['#e8a020','#4fc3f7','#81c784','#f48fb1','#ce93d8'];
+  // Use sectors from the first rider that has a theoretical_best; fall back to s1-s3
+  const firstTb = riderNames.map(n => data.riders[n] && data.riders[n].theoretical_best).find(t => t);
+  const sects = firstTb && firstTb.sectors ? firstTb.sectors : ['s1','s2','s3'];
+
+  // Build field-best per sector among selected riders
+  const bases = {};
+  sects.forEach(sx => {
+    const vals = riderNames.map(n => {
+      const rd = data.riders[n];
+      return rd && rd.sector_ranks ? (rd.theoretical_best ? rd.theoretical_best[sx] : null) : null;
+    }).filter(v => v !== null);
+    bases[sx] = vals.length ? Math.min(...vals) : null;
+  });
+
+  // Horizontal bar traces — one trace per rider, sectors on y-axis
+  // Each bar also has a colored border so the baseline rider (delta=0) still shows a visible marker
+  const traces = riderNames.map((name, i) => {
+    const rd = data.riders[name];
+    const tb = rd && rd.theoretical_best ? rd.theoretical_best : {};
+    const color = colors[i % colors.length];
+    const x = sects.map(sx => bases[sx] !== null && tb[sx] !== null ? +(tb[sx] - bases[sx]).toFixed(3) : null);
+    return { name, type:'bar', orientation:'h', x, y: sects.map(s=>s.toUpperCase()),
+             marker:{color:color, line:{color:color, width:3}},
+             text: x.map(v => v !== null ? fmtDelta(v) : ''),
+             textposition:'outside', hovertemplate:'%{text}<extra>' + name + '</extra>' };
+  });
+
+  const chartId = 'az-cmp-chart';
+  let html = '<div class="az-section"><h3>Sector Delta Chart</h3>'
+    + '<div id="' + chartId + '" style="height:200px"></div>'
+    + '<script>Plotly.newPlot("' + chartId + '",' + JSON.stringify(traces) + ','
+    + '{"barmode":"group","margin":{"t":10,"b":40,"l":40,"r":80},'
+    + '"paper_bgcolor":"transparent","plot_bgcolor":"transparent",'
+    + '"font":{"color":"#ccc"},"xaxis":{"color":"#999","title":"seconds vs fastest","range":[-0.005,null],"fixedrange":true},'
+    + '"yaxis":{"color":"#999","autorange":"reversed","fixedrange":true},"dragmode":false},'
+    + '{"responsive":true,"displayModeBar":false});<\/script></div>';
+
+  // Section B: Theoretical Best comparison table
+  html += '<div class="az-section"><h3>Theoretical Best Comparison</h3>';
+  html += '<table class="az-table"><thead><tr><th>Sector</th>';
+  riderNames.forEach(n => { html += '<th>' + n + '</th>'; });
+  html += '</tr></thead><tbody>';
+  sects.forEach(sx => {
+    html += '<tr><td>' + sx.toUpperCase() + '</td>';
+    riderNames.forEach(n => {
+      const tb = data.riders[n] && data.riders[n].theoretical_best;
+      const v  = tb ? tb[sx] : null;
+      html += '<td>' + (v !== null && v !== undefined ? v.toFixed(3) + 's' : '—') + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '<tr><td><strong>Total</strong></td>';
+  riderNames.forEach(n => {
+    const tb = data.riders[n] && data.riders[n].theoretical_best;
+    html += '<td><strong>' + (tb ? (tb.total_str || '—') : '—') + '</strong></td>';
+  });
+  html += '</tr></tbody></table></div>';
+
+  // Section C: Session stats comparison
+  html += '<div class="az-section"><h3>Session Stats Comparison</h3>';
+  const allSess = new Set();
+  riderNames.forEach(n => { const rd=data.riders[n]; if(rd&&rd.sessions) Object.keys(rd.sessions).forEach(s=>allSess.add(s)); });
+  const sessOrder = ['P1','P2','P3','Q1','Q1A','Q1B','Q2','Q2A','Q2B','TA','R1','WU','R2'];
+  const sortedSess = [...allSess].sort((a,b) => {
+    const ia=sessOrder.indexOf(a), ib=sessOrder.indexOf(b);
+    return (ia===-1?99:ia)-(ib===-1?99:ib);
+  });
+  html += '<div class="az-scroll-wrap"><table class="az-table"><thead><tr><th>Session</th>';
+  riderNames.forEach(n => { html += '<th colspan="2">' + n + '</th>'; });
+  html += '</tr><tr><th></th>';
+  riderNames.forEach(() => { html += '<th>Best Clean</th><th>Lap Std Dev</th>'; });
+  html += '</tr></thead><tbody>';
+  sortedSess.forEach(sess => {
+    html += '<tr><td>' + sess + '</td>';
+    riderNames.forEach(n => {
+      const rd = data.riders[n];
+      const s  = rd && rd.sessions && rd.sessions[sess];
+      html += '<td>' + (s ? (s.best_clean_str || '—') : '—') + '</td>'
+        + '<td>' + (s && s.lap_std !== null ? s.lap_std.toFixed(3) : '—') + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+
+  el.innerHTML = html;
+  el.querySelectorAll('script').forEach(old => {
+    const s = document.createElement('script');
+    s.textContent = old.textContent;
+    old.parentNode.replaceChild(s, old);
+  });
 }
 
 function renderYoYTable() {
