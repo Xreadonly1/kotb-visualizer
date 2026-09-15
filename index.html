@@ -73,6 +73,7 @@
   .make-duc { color: #cc0000; font-weight: 700; font-size: 11px; }
   .make-suz { color: #c8a000; font-weight: 700; font-size: 11px; }
   .make-kaw { color: #1a7a1a; font-weight: 700; font-size: 11px; }
+  .make-mv  { color: #9b1b30; font-weight: 700; font-size: 11px; }
   .make-other { color: #555; font-weight: 700; font-size: 11px; }
   .best-lap { font-weight: 600; }
   .gap-val { color: #e74c3c; }
@@ -478,6 +479,7 @@ function makeClass(make) {
   if (u === 'DUC') return 'make-duc';
   if (u === 'SUZ') return 'make-suz';
   if (u === 'KAW') return 'make-kaw';
+  if (u === 'MV')  return 'make-mv';
   return 'make-other';
 }
 // ── Class toggle state ────────────────────────────────────────────────────────
